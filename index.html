@@ -1,0 +1,846 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<title>入口カウンター</title>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@400;600;800&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap">
+<style>
+/* Layout: a hand-tally counter. IN/OUT switch pinned at the very top, two large press plates in thumb reach,
+   the time-banded tally and raw log below. Wide screens put the plates in a sticky left column. */
+:root {
+  --bg: #e9eeed;
+  --surface: #f8faf9;
+  --ink: #15201e;
+  --muted: #5d6b68;
+  --line: #cfd8d6;
+  --band: #dae3e1;
+  --m: #0d6b64;        /* 男性 plate */
+  --m-soft: #d5e9e6;
+  --f: #b8452a;        /* 女性 plate */
+  --f-soft: #f3ddd5;
+  --plate-ink: #ffffff;
+  --ok: #2f7a3e;
+  --warn: #9a6a00;
+  --bad: #b3261e;
+  --font-ui: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+  --font-num: "Chivo Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1514; --surface: #182120; --ink: #e6edeb; --muted: #95a4a1; --line: #2a3634; --band: #26322f;
+    --m: #2ea89c; --m-soft: #17322f; --f: #e0714f; --f-soft: #3a211a; --plate-ink: #0f1514;
+    --ok: #6cc77d; --warn: #e2b44a; --bad: #f2867d; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1514; --surface: #182120; --ink: #e6edeb; --muted: #95a4a1; --line: #2a3634; --band: #26322f;
+  --m: #2ea89c; --m-soft: #17322f; --f: #e0714f; --f-soft: #3a211a; --plate-ink: #0f1514;
+  --ok: #6cc77d; --warn: #e2b44a; --bad: #f2867d; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-ui); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 96px;
+  -webkit-tap-highlight-color: transparent;
+}
+.app { max-width: 1120px; margin: 0 auto; display: grid; gap: 16px; }
+button { font: inherit; color: inherit; }
+button:focus-visible, select:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* IN / OUT switch */
+.dir { display: grid; gap: 8px; }
+.dirsel {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 6px;
+}
+.dirsel button {
+  border: 0; border-radius: 11px; padding: 12px 8px; background: transparent; cursor: pointer;
+  display: grid; gap: 0; justify-items: center; touch-action: manipulation;
+}
+.dirsel button .big { font-family: var(--font-num); font-size: 26px; font-weight: 800; letter-spacing: .08em; line-height: 1.15; }
+.dirsel button .sm { font-size: 12px; color: var(--muted); font-weight: 700; }
+.dirsel button:hover { background: var(--bg); }
+.dirsel button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.dirsel button[aria-pressed="true"] .sm { color: inherit; opacity: .8; }
+.dirsel.three { grid-template-columns: repeat(3, 1fr); }
+.dirsel.three button { padding: 10px 6px; }
+.dirsel.three button .big { font-family: var(--font-ui); font-size: 20px; font-weight: 900; letter-spacing: .1em; }
+.rolegrp { display: grid; gap: 4px; }
+.rlab { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .08em; padding-left: 4px; }
+.rolegrp.unset .dirsel { border: 2px dashed var(--warn); padding: 5px; }
+.dirnote { margin: 0; font-size: 13px; color: var(--muted); }
+.dir.unset .dirnote { color: var(--warn); font-weight: 700; }
+.dirconfirm .ttl { flex-basis: 100%; font-weight: 700; font-size: 14px; }
+.dirconfirm {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px;
+  background: var(--surface); border: 1px solid var(--warn); border-radius: 12px; padding: 10px 12px;
+}
+
+/* header */
+.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.top h1 { margin: 0; font-size: 20px; font-weight: 900; letter-spacing: .02em; }
+.top .date { color: var(--muted); font-size: 13px; }
+.clock { font-family: var(--font-num); font-size: 26px; font-weight: 600; letter-spacing: .02em; line-height: 1; }
+.sync { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.sync i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.sync[data-s="synced"] i { background: var(--ok); }
+.sync[data-s="syncing"] i { background: var(--warn); }
+.sync[data-s="offline"] i, .sync[data-s="error"] i { background: var(--bad); }
+.right { display: grid; justify-items: end; gap: 6px; }
+
+/* plates */
+.counter { display: grid; gap: 12px; align-content: start; }
+.plates { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.plate {
+  position: relative; overflow: hidden;
+  border: 0; border-radius: 18px; cursor: pointer;
+  min-height: clamp(200px, 38svh, 360px);
+  display: grid; grid-template-rows: auto auto 1fr auto; align-items: center; justify-items: center; gap: 4px;
+  padding: 12px 10px 14px; color: var(--plate-ink);
+  touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  box-shadow: inset 0 -6px 0 rgba(0,0,0,.18);
+  transition: transform .06s ease, box-shadow .06s ease;
+}
+.plate.m { background: var(--m); }
+.plate.f { background: var(--f); }
+.plate:active:not(:disabled), .plate.hit { transform: translateY(3px); box-shadow: inset 0 -2px 0 rgba(0,0,0,.18); }
+.plate:disabled { filter: grayscale(1); opacity: .35; cursor: not-allowed; }
+.plate .lab { font-size: 26px; font-weight: 900; letter-spacing: .12em; }
+.plate .cnt { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 800; font-size: clamp(56px, 15vw, 104px); line-height: 1; }
+.plate .last { font-size: 12px; opacity: .85; font-family: var(--font-num); }
+.plate .dl {
+  font-family: var(--font-num); font-weight: 800; font-size: 13px; white-space: nowrap;
+  letter-spacing: .08em; padding: 1px 8px; border-radius: 99px; border: 1.5px solid currentColor; opacity: .9;
+}
+.plate .plus {
+  position: absolute; top: 14px; right: 16px; font-family: var(--font-num); font-weight: 800; font-size: 22px;
+  opacity: 0; pointer-events: none;
+}
+.plate.hit .plus { animation: pop .5s ease-out; }
+@keyframes pop { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-18px); } }
+
+.bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px 10px 16px;
+}
+.total { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.total .k { font-size: 13px; color: var(--muted); letter-spacing: .06em; }
+.total .v { font-family: var(--font-num); font-size: 30px; font-weight: 800; }
+.total .o { font-size: 12px; color: var(--muted); font-family: var(--font-num); }
+.btn {
+  border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 9px 14px; cursor: pointer;
+  font-size: 14px; font-weight: 700; touch-action: manipulation;
+}
+.btn:hover { border-color: var(--muted); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.danger { color: var(--bad); }
+.btn.solid { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+
+/* panels */
+.data { display: grid; gap: 18px; align-content: start; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 16px; min-width: 0; }
+.panel h2 { margin: 0; font-size: 15px; font-weight: 900; letter-spacing: .04em; }
+.ph { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.ctrls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; max-width: 100%;
+}
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 10px; font-size: 13px; cursor: pointer; font-family: var(--font-num); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+/* summary: time-of-day wheels (iOS-style) */
+.span { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
+.span .cap { font-size: 15px; font-weight: 700; }
+.wheel {
+  --ih: 34px;
+  position: relative; display: flex; align-items: center;
+  background: var(--bg); border-radius: 14px; padding: 0 4px;
+}
+.wheel::before {
+  content: ""; position: absolute; left: 5px; right: 5px; top: 50%; height: var(--ih);
+  transform: translateY(-50%); background: var(--band); border-radius: 9px; pointer-events: none;
+}
+.col {
+  position: relative; z-index: 1; width: 44px; height: calc(var(--ih) * 5);
+  overflow-y: auto; scroll-snap-type: y mandatory; overscroll-behavior: contain;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 32%, #000 68%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 32%, #000 68%, transparent 100%);
+}
+.col::-webkit-scrollbar { display: none; }
+.col:focus-visible { outline: 3px solid var(--ink); outline-offset: -2px; border-radius: 8px; }
+.col .sp { height: calc(var(--ih) * 2); }
+.col .it {
+  height: var(--ih); line-height: var(--ih); text-align: center; scroll-snap-align: center;
+  font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 600;
+  color: var(--muted); cursor: pointer; user-select: none; -webkit-user-select: none;
+}
+.col .it.on { color: var(--ink); font-weight: 800; }
+.wheel .colon { position: relative; z-index: 1; font-family: var(--font-num); font-size: 22px; font-weight: 800; padding-bottom: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 10px; }
+.chip { border: 1px solid var(--line); background: transparent; border-radius: 99px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+.chip:hover { border-color: var(--muted); }
+.res { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 14px; }
+.card { background: var(--bg); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; }
+.card .k { font-family: var(--font-num); font-size: 13px; font-weight: 800; letter-spacing: .08em; color: var(--muted); }
+.card .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 40px; font-weight: 800; line-height: 1.1; }
+.card .v small { font-size: 15px; font-weight: 600; margin-left: 2px; font-family: var(--font-ui); }
+.card .sub { font-size: 12px; color: var(--muted); font-family: var(--font-num); }
+.card.net { background: transparent; border: 1px dashed var(--line); }
+.resnote { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.resnote.bad { color: var(--bad); font-weight: 700; }
+
+.log { list-style: none; margin: 0; padding: 0; display: grid; max-height: 420px; overflow-y: auto; }
+.log li { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 6px; align-items: center; padding: 5px 2px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.log li:last-child { border-bottom: 0; }
+.log button { cursor: pointer; touch-action: manipulation; height: 36px; }
+.log button.dr {
+  min-width: 50px; border: 1.5px solid var(--line); background: transparent; border-radius: 8px;
+  font-family: var(--font-num); font-size: 12px; font-weight: 800; letter-spacing: .06em;
+}
+.log button.dr:hover, .log button.lc:hover { border-color: var(--muted); }
+.log button.lc {
+  min-width: 46px; border: 1.5px solid var(--line); background: transparent; border-radius: 8px;
+  font-size: 13px; font-weight: 700;
+}
+.log button.tag { min-width: 56px; border: 0; font-size: 13px; }
+.log button.tag:hover { filter: brightness(.95); }
+.log button.x { width: 32px; border: 0; background: transparent; border-radius: 8px; color: var(--muted); font-size: 20px; line-height: 1; }
+.log button.x:hover { color: var(--bad); background: var(--bg); }
+.log li.flash { animation: flash .9s ease-out; }
+@keyframes flash { 0% { background: var(--band); } 100% { background: transparent; } }
+
+.toast {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; justify-content: center; pointer-events: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.toast .in {
+  pointer-events: auto; display: flex; align-items: center; gap: 12px; width: 100%; max-width: 520px;
+  background: var(--ink); color: var(--bg); border-radius: 12px; padding: 10px 10px 10px 16px; font-size: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+}
+.toast .in span { flex: 1; min-width: 0; }
+.toast .in button {
+  flex: none; background: transparent; color: inherit; border: 1.5px solid currentColor; border-radius: 8px;
+  padding: 7px 12px; font-weight: 700; font-size: 14px; cursor: pointer;
+}
+.log .t { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.log .dr { font-family: var(--font-num); font-size: 12px; font-weight: 800; letter-spacing: .06em; }
+.tag { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 99px; }
+.tag.m { background: var(--m-soft); color: var(--m); }
+.tag.f { background: var(--f-soft); color: var(--f); }
+.empty { color: var(--muted); font-size: 14px; padding: 14px 0 4px; margin: 0; }
+
+.exp { display: flex; gap: 8px; flex-wrap: wrap; }
+.confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.msg { font-size: 13px; color: var(--muted); min-height: 1.4em; margin: 8px 0 0; }
+.msg.bad { color: var(--bad); }
+
+@media (min-width: 880px) {
+  .app { grid-template-columns: minmax(360px, 440px) 1fr; align-items: start; }
+  .dir, .top { grid-column: 1 / -1; }
+  .counter { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+  .plates { grid-template-columns: 1fr; }
+  .plate { min-height: 220px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plate, .plate:active { transition: none; }
+  .plate.hit .plus { animation: none; }
+}
+</style>
+</head>
+<body>
+
+
+<div class="app">
+  <section class="dir unset" id="dirBox" aria-label="担当">
+    <div class="rolegrp unset" id="locGrp">
+      <span class="rlab">地点</span>
+      <div class="dirsel three" role="group" aria-label="地点の選択">
+        <button type="button" id="locN" aria-pressed="false"><span class="big">北側</span></button>
+        <button type="button" id="locC" aria-pressed="false"><span class="big">中央</span></button>
+        <button type="button" id="locS" aria-pressed="false"><span class="big">南側</span></button>
+      </div>
+    </div>
+    <div class="rolegrp unset" id="dirGrp">
+      <span class="rlab">方向</span>
+      <div class="dirsel" role="group" aria-label="イン・アウトの選択">
+        <button type="button" id="dirI" aria-pressed="false"><span class="big">IN</span><span class="sm">イン（入る人）</span></button>
+        <button type="button" id="dirO" aria-pressed="false"><span class="big">OUT</span><span class="sm">アウト（出る人）</span></button>
+      </div>
+    </div>
+    <div id="dirConfirm" role="alertdialog" aria-live="assertive" hidden></div>
+    <p class="dirnote" id="dirNote">はじめに、担当する地点と方向（IN か OUT）を選んでください。</p>
+  </section>
+
+  <header class="top">
+    <div>
+      <h1>入口カウンター</h1>
+      <div class="date" id="today">—</div>
+    </div>
+    <div class="right">
+      <div class="clock" id="clock">--:--:--</div>
+      <div class="sync" data-s="synced"><i></i><span>この端末に自動保存</span></div>
+    </div>
+  </header>
+
+  <section class="counter" aria-label="カウント">
+    <div class="plates">
+      <button class="plate m" id="btnM" type="button" aria-label="男性を1人カウント" disabled>
+        <span class="dl" id="dlM">—</span>
+        <span class="lab">男性</span>
+        <span class="cnt" id="cntM">0</span>
+        <span class="last" id="lastM">—</span>
+        <span class="plus">+1</span>
+      </button>
+      <button class="plate f" id="btnF" type="button" aria-label="女性を1人カウント" disabled>
+        <span class="dl" id="dlF">—</span>
+        <span class="lab">女性</span>
+        <span class="cnt" id="cntF">0</span>
+        <span class="last" id="lastF">—</span>
+        <span class="plus">+1</span>
+      </button>
+    </div>
+    <div class="bar">
+      <div class="total"><span class="k" id="totK">本日合計</span><span class="v" id="cntT">0</span><span class="o" id="totO"></span></div>
+      <button class="btn" id="undo" type="button" disabled>直前を取り消す</button>
+    </div>
+    <p class="hint">押した瞬間の時刻が秒単位で、選んでいる方向（IN/OUT）とあわせて記録されます。押し間違えたら「直前を取り消す」。</p>
+  </section>
+
+  <div class="data">
+    <section class="panel" aria-labelledby="h-sum">
+      <div class="ph">
+        <h2 id="h-sum">集計</h2>
+        <select id="day" aria-label="表示する日"></select>
+      </div>
+      <div class="span">
+        <div class="wheel" role="group" aria-label="集計する時間帯の始まり">
+          <div class="col" id="fH" tabindex="0" role="spinbutton" aria-label="何時から"></div>
+          <span class="colon">:</span>
+          <div class="col" id="fM" tabindex="0" role="spinbutton" aria-label="何分から"></div>
+        </div>
+        <span class="cap">から</span>
+        <div class="wheel" role="group" aria-label="集計する時間帯の終わり">
+          <div class="col" id="tH" tabindex="0" role="spinbutton" aria-label="何時まで"></div>
+          <span class="colon">:</span>
+          <div class="col" id="tM" tabindex="0" role="spinbutton" aria-label="何分まで"></div>
+        </div>
+        <span class="cap">まで</span>
+      </div>
+      <div class="row">
+        <div class="seg" role="group" aria-label="性別">
+          <button type="button" data-sx="A" aria-pressed="true">全員</button>
+          <button type="button" data-sx="M" aria-pressed="false">男性</button>
+          <button type="button" data-sx="F" aria-pressed="false">女性</button>
+        </div>
+        <div class="ctrls">
+          <button class="chip" id="pDay" type="button">1日全体</button>
+          <button class="chip" id="pHour" type="button">直近1時間</button>
+        </div>
+      </div>
+      <div class="res" id="res"></div>
+      <p class="resnote" id="resNote"></p>
+    </section>
+
+    <section class="panel" aria-labelledby="h-log">
+      <div class="ph"><h2 id="h-log">記録</h2><span class="hint" id="logCount"></span></div>
+      <p class="hint" style="margin:-4px 0 8px">地点・IN/OUT・性別はタップで切り替え、× で削除。間違えたら画面下の「元に戻す」。</p>
+      <ul class="log" id="log"></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="h-exp">
+      <div class="ph"><h2 id="h-exp">書き出し</h2></div>
+      <div class="exp">
+        <button class="btn solid" id="dlRaw" type="button">記録をCSVで保存</button>
+        <button class="btn" id="shRaw" type="button" hidden>CSVをLINEなどで送る</button>
+        <button class="btn" id="cpRaw" type="button">記録CSVをコピー</button>
+      </div>
+      <p class="hint" style="margin-top:8px">CSVの列は「日時, 地点, 方向, 性別」です。全員分をそのまま縦につなげて集計できます。記録はこのスマホのブラウザに保存されるので、計測が終わるまでプライベートモードやブラウザのデータ消去は使わないでください。</p>
+      <div class="ph" style="margin:16px 0 0">
+        <div class="confirm" id="delWrap">
+          <button class="btn danger" id="del" type="button">この日の記録を削除</button>
+        </div>
+      </div>
+      <p class="msg" id="msg" role="status"></p>
+    </section>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden>
+  <div class="in" role="status"><span id="toastMsg"></span><button type="button" id="toastUndo">元に戻す</button></div>
+</div>
+
+<script>
+(() => {
+  const LS = "doorcount.v1";
+  const WD = ["日","月","火","水","木","金","土"];
+  const DIR = { I: "IN", O: "OUT" };
+  const LOC = { N: "北側", C: "中央", S: "南側" };
+  const LOC_ORDER = ["N", "C", "S"];
+  let state = { days: {}, dirty: {} };
+  let viewDay = null;
+  let sx = "A";
+  let dir = null;
+  let loc = null;
+  try { const v = localStorage.getItem(LS + ".sx"); if (v === "A" || v === "M" || v === "F") sx = v; } catch (e) {}
+  let rA = 0, rB = 1440; // 集計する時間帯（分）。rB=1440 は 24:00
+  try {
+    const r = JSON.parse(localStorage.getItem(LS + ".range") || "null");
+    const p = (v) => (typeof v === "string" && /^\d\d:\d\d$/.test(v)) ? Number(v.slice(0, 2)) * 60 + Number(v.slice(3)) : null;
+    if (r) {
+      const a = p(r.from), b = p(r.to);
+      if (a !== null && a < 1440) rA = a;
+      if (b !== null) rB = b === 0 ? 1440 : Math.min(b, 1440);
+    }
+  } catch (e) {}
+  try { const v = localStorage.getItem(LS + ".dir"); if (v === "I" || v === "O") dir = v; } catch (e) {}
+  try { const v = localStorage.getItem(LS + ".loc"); if (v in LOC) loc = v; } catch (e) {}
+
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, "0");
+  const dayKey = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+  const hms = (ms) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+  const hm = (min) => `${pad(Math.floor(min/60))}:${pad(min%60)}`;
+  const dayLabel = (k) => { const [y,m,d] = k.split("-").map(Number); const w = WD[new Date(y, m-1, d).getDay()]; return `${y}年${m}月${d}日（${w}）`; };
+  const todayKey = () => dayKey(Date.now());
+  const dirName = (c) => DIR[c] || "不明";
+  const locName = (c) => LOC[c] || "不明";
+
+  function norm(d) {
+    if (!d || !Array.isArray(d.t)) return { t: [], s: "", d: "", p: "" };
+    if (typeof d.s !== "string") d.s = "";
+    for (const f of ["d", "p"]) {
+      if (typeof d[f] !== "string") d[f] = "";
+      while (d[f].length < d.t.length) d[f] += "-";
+      if (d[f].length > d.t.length) d[f] = d[f].slice(0, d.t.length);
+    }
+    return d;
+  }
+  function loadLocal() {
+    try {
+      const raw = localStorage.getItem(LS);
+      if (!raw) return;
+      const o = JSON.parse(raw);
+      if (o && typeof o.days === "object") {
+        state.days = o.days; state.dirty = o.dirty || {};
+        for (const k of Object.keys(state.days)) state.days[k] = norm(state.days[k]);
+      }
+    } catch (e) {}
+  }
+  function saveLocal() { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) {} }
+  function dayData(k) { return state.days[k] || { t: [], s: "", d: "", p: "" }; }
+
+  /* ---------- 担当（地点・IN/OUT） ---------- */
+  const ROLE = {
+    loc: { label: "地点", name: locName, get: () => loc, set: (x) => { loc = x; try { localStorage.setItem(LS + ".loc", x); } catch (e) {} } },
+    dir: { label: "方向", name: dirName, get: () => dir, set: (x) => { dir = x; try { localStorage.setItem(LS + ".dir", x); } catch (e) {} } },
+  };
+  function hideDirConfirm() { const c = $("dirConfirm"); c.hidden = true; c.innerHTML = ""; }
+  function chooseRole(kind, x) {
+    const R = ROLE[kind]; const cur = R.get();
+    if (x === cur) { hideDirConfirm(); return; }
+    if (!cur) { R.set(x); hideDirConfirm(); render(); return; }
+    const c = $("dirConfirm");
+    c.className = "dirconfirm";
+    c.innerHTML = `<span class="ttl">${R.label}を ${R.name(cur)} → ${R.name(x)} に変更しますか？</span>` +
+      `<span>これから押す分が ${R.name(x)} として記録されます。記録済みの分はそのままです。</span>` +
+      `<button class="btn solid" id="dirYes" type="button">${R.name(x)} に変更する</button>` +
+      `<button class="btn" id="dirNo" type="button">やめる</button>`;
+    c.hidden = false;
+    $("dirYes").onclick = () => { R.set(x); hideDirConfirm(); render(); say(`${R.label}を ${R.name(x)} に変更しました`); };
+    $("dirNo").onclick = hideDirConfirm;
+    $("dirNo").focus();
+  }
+  $("dirI").addEventListener("click", () => chooseRole("dir", "I"));
+  $("dirO").addEventListener("click", () => chooseRole("dir", "O"));
+  $("locN").addEventListener("click", () => chooseRole("loc", "N"));
+  $("locC").addEventListener("click", () => chooseRole("loc", "C"));
+  $("locS").addEventListener("click", () => chooseRole("loc", "S"));
+
+  /* ---------- counting ---------- */
+  function tap(sex, el) {
+    if (!dir || !loc) return;
+    const now = Date.now();
+    const k = dayKey(now);
+    const d = state.days[k] || (state.days[k] = { t: [], s: "", d: "", p: "" });
+    d.t.push(now); d.s += sex; d.d += dir; d.p += loc;
+    state.dirty[k] = true;
+    saveLocal();
+    viewDay = k;
+    el.classList.remove("hit"); void el.offsetWidth; el.classList.add("hit");
+    try { navigator.vibrate && navigator.vibrate(12); } catch (e) {}
+    keepAwake();
+    render();
+    queueSync(k);
+  }
+  $("btnM").addEventListener("click", (e) => tap("M", e.currentTarget));
+  $("btnF").addEventListener("click", (e) => tap("F", e.currentTarget));
+
+  /* ---------- editing records (with undo) ---------- */
+  const sexName = (c) => c === "M" ? "男性" : "女性";
+  const putAt = (str, i, c) => str.slice(0, i) + c + str.slice(i + 1);
+  function commitDay(k) { state.dirty[k] = true; saveLocal(); render(); queueSync(k); }
+  function findIdx(d, i, t) { return d.t[i] === t ? i : d.t.indexOf(t); }
+  function removeAt(k, i) {
+    const d = state.days[k];
+    const rec = { t: d.t[i], s: d.s[i], d: d.d[i], p: d.p[i] };
+    d.t.splice(i, 1);
+    for (const f of ["s", "d", "p"]) d[f] = d[f].slice(0, i) + d[f].slice(i + 1);
+    return rec;
+  }
+  function insertRec(k, rec) {
+    const d = state.days[k] || (state.days[k] = { t: [], s: "", d: "", p: "" });
+    let i = d.t.findIndex((x) => x > rec.t); if (i < 0) i = d.t.length;
+    d.t.splice(i, 0, rec.t);
+    for (const f of ["s", "d", "p"]) d[f] = d[f].slice(0, i) + (rec[f] || "-") + d[f].slice(i);
+  }
+  let flashT = null;
+  function deleteRec(k, i) {
+    const rec = removeAt(k, i);
+    commitDay(k);
+    toast(`${hms(rec.t)} の ${locName(rec.p)}・${dirName(rec.d)}・${sexName(rec.s)} を削除しました`, () => { insertRec(k, rec); flashT = rec.t; commitDay(k); });
+  }
+  function editRec(k, i, field) {
+    const d = state.days[k];
+    const t = d.t[i], prev = d[field][i];
+    const next = field === "s" ? (prev === "M" ? "F" : "M")
+      : field === "d" ? (prev === "I" ? "O" : "I")
+      : LOC_ORDER[(LOC_ORDER.indexOf(prev) + 1) % 3];
+    d[field] = putAt(d[field], i, next);
+    flashT = t; commitDay(k);
+    const nm = field === "s" ? sexName : field === "d" ? dirName : locName;
+    const what = `${nm(prev)} → ${nm(next)}`;
+    toast(`${hms(t)} を ${what} に変更しました`, () => {
+      const dd = state.days[k]; if (!dd) return;
+      const j = dd.t.indexOf(t); if (j < 0) return;
+      dd[field] = putAt(dd[field], j, prev); flashT = t; commitDay(k);
+    });
+  }
+
+  $("undo").addEventListener("click", () => {
+    const k = todayKey(); const d = state.days[k];
+    if (!d || !d.t.length) return;
+    deleteRec(k, d.t.length - 1);
+  });
+
+  $("log").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-act]"); if (!b) return;
+    const k = viewDay; const d = state.days[k]; if (!d) return;
+    const i = findIdx(d, Number(b.dataset.i), Number(b.dataset.t)); if (i < 0) return;
+    if (b.dataset.act === "del") deleteRec(k, i);
+    else editRec(k, i, { sx: "s", dir: "d", loc: "p" }[b.dataset.act]);
+  });
+
+  let toastT = null, toastUndo = null;
+  function toast(msg, undoFn) {
+    $("toastMsg").textContent = msg; toastUndo = undoFn;
+    $("toast").hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(hideToast, 7000);
+  }
+  function hideToast() { $("toast").hidden = true; toastUndo = null; }
+  $("toastUndo").addEventListener("click", () => {
+    const fn = toastUndo; hideToast();
+    if (fn) { fn(); say("元に戻しました"); }
+  });
+
+  /* ---------- screen wake ---------- */
+  let wake = null;
+  async function keepAwake() {
+    if (wake || !("wakeLock" in navigator)) return;
+    try { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => { wake = null; }); } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && state.days[todayKey()]) keepAwake(); });
+
+  /* ---------- rendering ---------- */
+  function counts(d, dr, lc) { let m = 0, f = 0; for (let i = 0; i < d.s.length; i++) { if (d.d[i] !== dr || d.p[i] !== lc) continue; d.s[i] === "M" ? m++ : f++; } return { m, f }; }
+  function lastOf(d, sex, dr, lc) { for (let i = d.t.length - 1; i >= 0; i--) if (d.s[i] === sex && d.d[i] === dr && d.p[i] === lc) return d.t[i]; return null; }
+
+  function render() {
+    const tk = todayKey();
+    const td = dayData(tk);
+    $("today").textContent = dayLabel(tk);
+
+    // role selector
+    const ready = !!(dir && loc);
+    $("dirBox").classList.toggle("unset", !ready);
+    $("locGrp").classList.toggle("unset", !loc);
+    $("dirGrp").classList.toggle("unset", !dir);
+    for (const c of LOC_ORDER) $("loc" + c).setAttribute("aria-pressed", String(loc === c));
+    $("dirI").setAttribute("aria-pressed", String(dir === "I"));
+    $("dirO").setAttribute("aria-pressed", String(dir === "O"));
+    const role = ready ? `${locName(loc)}・${dirName(dir)}` : "";
+    $("dirNote").textContent = ready
+      ? `${locName(loc)} の ${dirName(dir)}（${dir === "I" ? "入る人" : "出る人"}）を記録中。`
+      : !loc && !dir ? "はじめに、担当する地点と方向（IN か OUT）を選んでください。"
+      : !loc ? "担当する地点（北側・中央・南側）を選んでください。"
+      : "担当する方向（IN か OUT）を選んでください。";
+
+    $("btnM").disabled = $("btnF").disabled = !ready;
+    $("dlM").textContent = $("dlF").textContent = ready ? `${locName(loc)} ${dirName(dir)}` : "—";
+    $("btnM").setAttribute("aria-label", ready ? `${role}の男性を1人カウント` : "先に地点と方向を選んでください");
+    $("btnF").setAttribute("aria-label", ready ? `${role}の女性を1人カウント` : "先に地点と方向を選んでください");
+
+    if (ready) {
+      const c = counts(td, dir, loc);
+      $("cntM").textContent = c.m; $("cntF").textContent = c.f; $("cntT").textContent = c.m + c.f;
+      const lm = lastOf(td, "M", dir, loc), lf = lastOf(td, "F", dir, loc);
+      $("lastM").textContent = lm ? `最終 ${hms(lm)}` : "—";
+      $("lastF").textContent = lf ? `最終 ${hms(lf)}` : "—";
+      $("totK").textContent = `本日 ${role} 合計`;
+      const others = td.t.length - c.m - c.f;
+      $("totO").textContent = others ? `（ほかの担当 ${others}件）` : "";
+    } else {
+      $("cntM").textContent = $("cntF").textContent = $("cntT").textContent = "–";
+      $("lastM").textContent = $("lastF").textContent = "—";
+      $("totK").textContent = "本日合計"; $("totO").textContent = "";
+    }
+    $("undo").disabled = !td.t.length;
+
+    // day selector
+    const keys = new Set(Object.keys(state.days).filter((k) => state.days[k].t.length));
+    keys.add(tk);
+    if (!viewDay || !keys.has(viewDay)) viewDay = tk;
+    const sel = $("day");
+    const sorted = [...keys].sort().reverse();
+    const sig = sorted.join("|");
+    if (sel.dataset.sig !== sig) {
+      sel.innerHTML = "";
+      for (const k of sorted) { const o = document.createElement("option"); o.value = k; sel.appendChild(o); }
+      sel.dataset.sig = sig;
+    }
+    for (const o of sel.options) o.textContent = (o.value === tk ? "今日 " : "") + dayLabel(o.value) + `　${dayData(o.value).t.length}件`;
+    sel.value = viewDay;
+    document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.sx === sx)));
+
+    renderSummary();
+    renderLog();
+    const vd = dayData(viewDay);
+    $("dlRaw").disabled = $("cpRaw").disabled = $("shRaw").disabled = !vd.t.length;
+    if ($("del")) $("del").disabled = !vd.t.length;
+  }
+
+  /* ---------- summary: any time range × sex ---------- */
+  const reduceMotion = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } })();
+  function makeWheel(el, labels, onCommit) {
+    el.innerHTML = `<div class="sp"></div>` + labels.map((l, i) => `<div class="it" data-i="${i}">${l}</div>`).join("") + `<div class="sp"></div>`;
+    const items = [...el.querySelectorAll(".it")];
+    const ih = () => (items[0] && items[0].offsetHeight) || 34;
+    const clamp = (i) => Math.max(0, Math.min(labels.length - 1, i));
+    const idxNow = () => clamp(Math.round(el.scrollTop / ih()));
+    let cur = -1, timer = null, raf = 0, committed = -1;
+    function mark(i) {
+      if (i === cur) return;
+      if (cur >= 0) items[cur].classList.remove("on");
+      items[i].classList.add("on"); cur = i;
+      el.setAttribute("aria-valuenow", String(i)); el.setAttribute("aria-valuetext", labels[i]);
+    }
+    function commit() { const i = idxNow(); mark(i); if (i !== committed) { committed = i; onCommit(i); } }
+    el.addEventListener("scroll", () => {
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; mark(idxNow()); });
+      clearTimeout(timer); timer = setTimeout(commit, 140);
+    }, { passive: true });
+    el.addEventListener("click", (e) => { const it = e.target.closest(".it"); if (it) api.set(Number(it.dataset.i), true); });
+    el.addEventListener("keydown", (e) => {
+      const step = { ArrowUp: -1, ArrowDown: 1, PageUp: -10, PageDown: 10 }[e.key];
+      if (!step) return;
+      e.preventDefault(); api.set(clamp(idxNow() + step), true);
+    });
+    el.setAttribute("aria-valuemin", "0"); el.setAttribute("aria-valuemax", String(labels.length - 1));
+    const api = {
+      set(i, smooth) {
+        i = clamp(i); mark(i); committed = i;
+        el.scrollTo({ top: i * ih(), behavior: smooth && !reduceMotion ? "smooth" : "auto" });
+      },
+    };
+    return api;
+  }
+
+  const H24 = Array.from({ length: 24 }, (_, i) => pad(i));
+  const M60 = Array.from({ length: 60 }, (_, i) => pad(i));
+  const vals = { fH: 0, fM: 0, tH: 24, tM: 0 };
+  function changed() {
+    if (vals.tH === 24 && vals.tM !== 0) { vals.tM = 0; wTM.set(0, true); }
+    rA = vals.fH * 60 + vals.fM; rB = vals.tH * 60 + vals.tM;
+    saveRange(); renderSummary();
+  }
+  const wFH = makeWheel($("fH"), H24, (i) => { vals.fH = i; changed(); });
+  const wFM = makeWheel($("fM"), M60, (i) => { vals.fM = i; changed(); });
+  const wTH = makeWheel($("tH"), [...H24, "24"], (i) => { vals.tH = i; changed(); });
+  const wTM = makeWheel($("tM"), M60, (i) => { vals.tM = i; changed(); });
+  function setRange(a, b, smooth) {
+    rA = a; rB = b;
+    vals.fH = Math.floor(a / 60); vals.fM = a % 60; vals.tH = Math.floor(b / 60); vals.tM = b % 60;
+    wFH.set(vals.fH, smooth); wFM.set(vals.fM, smooth); wTH.set(vals.tH, smooth); wTM.set(vals.tM, smooth);
+    saveRange(); renderSummary();
+  }
+  function saveRange() { try { localStorage.setItem(LS + ".range", JSON.stringify({ from: hm(rA), to: hm(rB) })); } catch (e) {} }
+
+  function renderSummary() {
+    const d = dayData(viewDay);
+    const box = $("res"), note = $("resNote");
+    const f = hm(rA), t = hm(rB);
+    const sxLabel = { A: "全員", M: "男性", F: "女性" }[sx];
+    if (rB <= rA) {
+      box.innerHTML = ""; note.className = "resnote bad";
+      note.textContent = "「まで」は「から」より後の時刻にしてください。";
+      return;
+    }
+    note.className = "resnote";
+    const ds = dirsIn(viewDay);
+    if (!ds.length) {
+      box.innerHTML = `<p class="empty" style="grid-column:1/-1">この日の記録はまだありません。カウントすると、指定した時間帯・性別の人数がここに出ます。</p>`;
+      note.textContent = "";
+      return;
+    }
+    const lo = rA * 60, hi = rB * 60;
+    const c = { I: { M: 0, F: 0 }, O: { M: 0, F: 0 } };
+    for (let i = 0; i < d.t.length; i++) {
+      const x = new Date(d.t[i]); const s = x.getHours() * 3600 + x.getMinutes() * 60 + x.getSeconds();
+      if (s < lo || s >= hi) continue;
+      const g = c[d.d[i]]; if (g) g[d.s[i]]++;
+    }
+    const pick = (g) => sx === "A" ? g.M + g.F : g[sx];
+    let html = "";
+    for (const x of ds) {
+      const g = c[x];
+      html += `<div class="card"><span class="k">${dirName(x)}</span><span class="v">${pick(g)}<small>人</small></span>` +
+        `<span class="sub">${sx === "A" ? `男性 ${g.M} ／ 女性 ${g.F}` : sxLabel}</span></div>`;
+    }
+    if (ds.length === 2) {
+      const net = pick(c.I) - pick(c.O);
+      html += `<div class="card net"><span class="k">IN−OUT</span><span class="v">${net > 0 ? "+" : ""}${net}<small>人</small></span><span class="sub">差し引き</span></div>`;
+    }
+    box.innerHTML = html;
+    note.textContent = `${dayLabel(viewDay)}　${f} から ${t} まで${rB < 1440 ? `（${t}ちょうどは含まない）` : ""}・${sxLabel}`;
+  }
+  $("pDay").addEventListener("click", () => setRange(0, 1440, true));
+  $("pHour").addEventListener("click", () => {
+    const now = new Date(); const end = Math.min(1440, now.getHours() * 60 + now.getMinutes() + 1);
+    viewDay = todayKey(); setRange(Math.max(0, end - 60), end, true); render();
+  });
+
+  function renderLog() {
+    const d = dayData(viewDay);
+    const ul = $("log");
+    $("logCount").textContent = d.t.length ? `${d.t.length}件（新しい順）` : "";
+    if (!d.t.length) { ul.innerHTML = `<li style="display:block"><p class="empty">ボタンを押すたびに、ここへ時刻・方向・性別が1行ずつ追加されます。</p></li>`; return; }
+    const n = d.t.length, lim = Math.min(n, 300);
+    let html = "";
+    for (let i = n - 1; i >= n - lim; i--) {
+      const m = d.s[i] === "M";
+      const t = d.t[i], at = `data-i="${i}" data-t="${t}"`, tm = hms(t), dn = dirName(d.d[i]), ln = locName(d.p[i]);
+      html += `<li${t === flashT ? ' class="flash"' : ""}><span class="t">${tm}</span>` +
+        `<button type="button" class="lc" data-act="loc" ${at} aria-label="${tm} の地点 ${ln}。タップで切り替え">${ln}</button>` +
+        `<button type="button" class="dr" data-act="dir" ${at} aria-label="${tm} の方向 ${dn}。タップで切り替え">${dn}</button>` +
+        `<button type="button" class="tag ${m ? "m" : "f"}" data-act="sx" ${at} aria-label="${tm} の性別 ${m ? "男性" : "女性"}。タップで切り替え">${m ? "男性" : "女性"}</button>` +
+        `<button type="button" class="x" data-act="del" ${at} aria-label="${tm} の記録を削除">×</button></li>`;
+    }
+    if (n > lim) html += `<li style="display:block"><p class="empty">古い${n - lim}件はCSVに含まれます。</p></li>`;
+    ul.innerHTML = html;
+    flashT = null;
+  }
+
+  $("day").addEventListener("change", (e) => { viewDay = e.target.value; render(); });
+  document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
+    sx = b.dataset.sx; try { localStorage.setItem(LS + ".sx", sx); } catch (e) {} render();
+  }));
+
+  function tick() { const n = new Date(); $("clock").textContent = hms(n.getTime()); if (n.getSeconds() === 0) render(); }
+  setInterval(tick, 1000);
+
+  /* ---------- export ---------- */
+  function dirsIn(k) { const d = dayData(k); return ["I", "O"].filter((x) => d.d.includes(x)); }
+  function fileTag(k) {
+    const d = dayData(k);
+    const ls = LOC_ORDER.filter((x) => d.p.includes(x)).map(locName);
+    const ds = dirsIn(k).map(dirName);
+    return [ls.length ? ls.join("-") : "地点不明", ds.length ? ds.join("-") : "方向不明"].join("_");
+  }
+  function rawCsv(k) {
+    const d = dayData(k);
+    const lines = ["日時,地点,方向,性別"];
+    d.t.forEach((t, i) => lines.push(`${k} ${hms(t)},${locName(d.p[i])},${dirName(d.d[i])},${d.s[i] === "M" ? "男性" : "女性"}`));
+    return "﻿" + lines.join("\r\n") + "\r\n";
+  }
+  function save(filename, data) {
+    try {
+      const url = URL.createObjectURL(new Blob([data], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a"); a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      say(`${filename} をダウンロードしました。iPhoneは「ファイル」アプリの「ダウンロード」に入ります。`);
+    } catch (e) { say("保存できませんでした。「LINEなどで送る」か「記録CSVをコピー」を使ってください。", true); }
+  }
+  const canShareFiles = (() => {
+    try { return !!(navigator.share && navigator.canShare && navigator.canShare({ files: [new File(["x"], "x.csv", { type: "text/csv" })] })); }
+    catch (e) { return false; }
+  })();
+  if (canShareFiles) $("shRaw").hidden = false;
+  $("shRaw").addEventListener("click", async () => {
+    const name = `入口カウント_${fileTag(viewDay)}_${viewDay}.csv`;
+    try { await navigator.share({ files: [new File([rawCsv(viewDay)], name, { type: "text/csv" })], title: name }); }
+    catch (e) { if (!e || e.name !== "AbortError") say("送れませんでした。「記録をCSVで保存」か「記録CSVをコピー」を使ってください。", true); }
+  });
+  $("dlRaw").addEventListener("click", () => save(`入口カウント_${fileTag(viewDay)}_${viewDay}.csv`, rawCsv(viewDay)));
+  $("cpRaw").addEventListener("click", () => {
+    const text = rawCsv(viewDay).replace(/^﻿/, "");
+    const fallback = () => {
+      const ta = document.createElement("textarea"); ta.value = text; ta.setAttribute("readonly", "");
+      ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select();
+      let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+      ta.remove(); say(ok ? "CSVをコピーしました" : "コピーできませんでした", !ok);
+    };
+    try { navigator.clipboard.writeText(text).then(() => say("CSVをコピーしました"), fallback); } catch (e) { fallback(); }
+  });
+
+  /* ---------- delete day (in-page confirm) ---------- */
+  function resetDel() {
+    $("delWrap").innerHTML = `<button class="btn danger" id="del" type="button">この日の記録を削除</button>`;
+    bindDel();
+  }
+  function bindDel() {
+    const b = $("del");
+    b.disabled = !dayData(viewDay || todayKey()).t.length;
+    b.addEventListener("click", () => {
+      const k = viewDay; const n = dayData(k).t.length; const w = $("delWrap");
+      w.innerHTML = `<span>${dayLabel(k)}の${n}件をすべて削除します。</span>` +
+        `<button class="btn danger" id="delYes" type="button">削除する</button><button class="btn" id="delNo" type="button">やめる</button>`;
+      $("delNo").onclick = resetDel;
+      $("delYes").onclick = () => {
+        delete state.days[k]; state.dirty[k] = true; saveLocal(); resetDel(); viewDay = todayKey(); render(); queueSync(k);
+        say(`${dayLabel(k)}の記録を削除しました`);
+      };
+    });
+  }
+
+  let msgT;
+  function say(t, bad) { const m = $("msg"); m.textContent = t; m.className = "msg" + (bad ? " bad" : ""); clearTimeout(msgT); msgT = setTimeout(() => { m.textContent = ""; }, 6000); }
+
+  function queueSync() {}
+
+  loadLocal();
+  bindDel();
+  tick();
+  setRange(rA, rB, false);
+  render();
+})();
+</script>
+
+</body>
+</html>
